@@ -1,18 +1,19 @@
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.stats import pearsonr
+from sklearn import linear_model
+from scipy.stats import pearsonr, ttest_ind
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 
-d = pd.read_csv('data/datasci_takehome.csv', index_col=('month', 'system'))
+d = pd.read_csv('data/datasci_takehome.csv')
 d['pr'] = d['correctedkwh'] / d['expectedkwh']
 def energy_density_estimator(month):
     avg_fraction_of_year_elapsed = (month - .5) / 12
     winter_solstice_fraction_of_year = 21 / 365
     return -np.cos(2 * np.pi * avg_fraction_of_year_elapsed - winter_solstice_fraction_of_year)
 
-d['energydensityestimator'] = energy_density_estimator(d.index.get_level_values('month').values)
+d['energydensityestimator'] = d['month'].apply(energy_density_estimator)
 
 def plot_kwh():
     fig, axes = plt.subplots(3, 1, sharex='col')
@@ -21,10 +22,22 @@ def plot_kwh():
     d[d['vintage'] == 'C'].groupby(level='month')[['correctedkwh', 'expectedkwh']].mean().plot(ax=axes[2])
     plt.show()
 
-vintage_dummies = pd.get_dummies(d['vintage'], drop_first=True)
-month_dummies = pd.get_dummies(d.reset_index()['month'], drop_first=True)
-d = pd.concat((d, vintage_dummies, month_dummies), axis=1, ignore_index=True)
+def plot_pr():
+    pr_means = d.groupby('month').apply(lambda group: group.groupby('vintage')['pr'].mean())
+    pr_means.plot()
+    plt.show()
 
-# model = smf.GLM.from_formula(formula='pr ~ A + B + energydensityestimator', family=sm.families.Poisson(), data=d)
-model = smf.GLM.from_formula(formula='pr ~ energydensityestimator', family=sm.families.Poisson(), data=d)
+# vintage_dummies = pd.get_dummies(d['vintage'], drop_first=True)
+# month_dummies = pd.get_dummies(d['month'], drop_first=True)
+# d = pd.concat((d, vintage_dummies, month_dummies), axis=1)
+
+model = smf.GLM.from_formula(formula='pr ~ vintage', family=sm.families.Poisson(), data=d)
+# model = smf.GLM(d['pr'], d[month_dummies.columns.append(vintage_dummies.columns)], family=sm.families.Poisson())
+# model = smf.GLM(d['pr'], d[vintage_dummies.columns])
+# model = smf.GLM.from_formula(formula='pr ~ vintage', family=sm.families.Gaussian(), data=d[np.logical_or(d['vintage']=='B', d['vintage']=='C')])
+# model = smf.GLM.from_formula(formula='pr ~ vintage', family=sm.families.Gaussian(), data=d[np.logical_or(d['vintage']=='A', d['vintage']=='C')])
+model = smf.GLM.from_formula(formula='pr ~ vintage + C(month)', family=sm.families.Gamma(), data=d)
 result = model.fit()
+print(result.summary())
+
+# estimator = linear_model.LinearRegression().fit(d[vintage_dummies.columns].values, d['pr'].values)
